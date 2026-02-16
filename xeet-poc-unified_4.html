@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Xeet Protocol · Sponsor & XCC PoC</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{background:#0a0b0f}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
+input[type=number]{-moz-appearance:textfield}::selection{background:rgba(59,130,246,0.3)}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#0a0b0f}::-webkit-scrollbar-thumb{background:#1e2030;border-radius:3px}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// affinity: 0 = pure social/reach, 1 = pure capital/on-chain. Weighted by how much the KPI favors capital-active vs socially-active participants.
+const KPI_TYPES = [
+  { id:"app_install",label:"App Installs",icon:"📲",verification:"S2S Postback (MMP)",avgCost:12.5,unit:"install",avgSquadsPerK:8,avgMembersPerSquad:45,affinity:0.2,affinityLabel:"Social-heavy",integration:"MMP integration (AppsFlyer, Adjust, Branch). S2S postback on each verified install.",example:"POST /postback?click_id={click_id}&event=install",dataNeeded:["MMP postback URL","Event name","Attribution window"] },
+  { id:"purchase",label:"Purchases",icon:"💳",verification:"S2S Postback",avgCost:28,unit:"purchase",avgSquadsPerK:5,avgMembersPerSquad:38,affinity:0.7,affinityLabel:"Capital-leaning",integration:"Webhook from payment processor on each purchase.",example:"POST /v1/conversions { conversion_id, event_type: 'purchase' }",dataNeeded:["Webhook URL","Event schema","Order ID format"] },
+  { id:"signup",label:"Sign-ups",icon:"✍️",verification:"S2S / API",avgCost:6.5,unit:"sign-up",avgSquadsPerK:12,avgMembersPerSquad:52,affinity:0.15,affinityLabel:"Social-heavy",integration:"Server callback on account creation with user ID + attribution key.",example:"POST /v1/conversions { conversion_id, event_type: 'signup' }",dataNeeded:["Webhook URL","User ID format","Dedup logic"] },
+  { id:"onchain_tx",label:"On-chain Actions",icon:"⛓️",verification:"Contract Indexing",avgCost:15,unit:"transaction",avgSquadsPerK:6,avgMembersPerSquad:35,affinity:0.85,affinityLabel:"Capital-heavy",integration:"We index your contract for qualifying events.",example:"Contract: 0x... on Base · Event: Swap(address, uint256)",dataNeeded:["Contract + chain","Event signatures","Thresholds"] },
+  { id:"wallet_connect",label:"Wallet Connections",icon:"🔗",verification:"On-chain",avgCost:5,unit:"connection",avgSquadsPerK:4,avgMembersPerSquad:30,affinity:0.6,affinityLabel:"Capital-leaning",integration:"Index first interactions with your contract. Registered wallet = attribution ID.",example:"Event: NewUser(address wallet) OR first tx",dataNeeded:["Contract + chain","Connection definition"] },
+  { id:"content_submit",label:"Content Submissions",icon:"📝",verification:"Manual + AI",avgCost:18,unit:"submission",avgSquadsPerK:7,avgMembersPerSquad:40,affinity:0.1,affinityLabel:"Social-heavy",integration:"Platform submission flow with AI screening + approval.",example:"Submit → AI filter → approval → verified",dataNeeded:["Content brief","Approval criteria","Review SLA"] },
+];
+const PLATFORM_FEE=5000, PLATFORM_WALLET="0x7a3E...8f2D";
+const BOUNTIES=[
+  {id:"b1",brand:"NovaPay",logo:"💎",cat:"Payments",kpis:[{type:"app_install",target:2000},{type:"wallet_connect",target:5000}],budget:25000,days:14,mode:"open",posted:"2h ago",ms:[{pct:30,pay:30},{pct:60,pay:60},{pct:85,pay:88},{pct:100,pay:100}],desc:"Self-custody wallet. Non-custodial, gasless UX."},
+  {id:"b2",brand:"ChainSwap",logo:"🔄",cat:"DeFi",kpis:[{type:"onchain_tx",target:4000}],budget:60000,days:21,mode:"filtered",posted:"5h ago",ms:[{pct:25,pay:25},{pct:50,pay:50},{pct:75,pay:80},{pct:100,pay:100}],desc:"Cross-chain DEX aggregator. 12 chains."},
+  {id:"b3",brand:"MintDAO",logo:"🏛️",cat:"DeFi",kpis:[{type:"signup",target:8000},{type:"onchain_tx",target:2000}],budget:45000,days:14,mode:"open",posted:"1d ago",ms:[{pct:30,pay:30},{pct:60,pay:60},{pct:100,pay:100}],desc:"Community-governed treasury for grants."},
+  {id:"b4",brand:"ZapWallet",logo:"⚡",cat:"Payments",kpis:[{type:"app_install",target:5000}],budget:40000,days:21,mode:"open",posted:"3h ago",ms:[{pct:30,pay:30},{pct:60,pay:60},{pct:90,pay:90},{pct:100,pay:100}],desc:"Lightning-fast mobile payments."},
+  {id:"b5",brand:"VaultFi",logo:"🔐",cat:"DeFi",kpis:[{type:"wallet_connect",target:3000},{type:"onchain_tx",target:1500}],budget:35000,days:14,mode:"open",posted:"8h ago",ms:[{pct:25,pay:25},{pct:50,pay:50},{pct:100,pay:100}],desc:"Non-custodial yield optimizer."},
+  {id:"b6",brand:"Pragma",logo:"📊",cat:"Infrastructure",kpis:[{type:"signup",target:3000}],budget:18000,days:14,mode:"filtered",posted:"12h ago",ms:[{pct:30,pay:30},{pct:70,pay:70},{pct:100,pay:100}],desc:"Oracle network for real-time price feeds."},
+];
+const MY_XCC={name:"CryptoAlice",tier:"Elite",squadSize:127,squadActive:89,avgAlpha:38,winRate:87,campaigns:31,totalOutcomes:14200,totalCapital:182000};
+const ELIGIBLE_XCCS=[
+  {id:1,name:"CryptoAlice",tier:"Elite",winRate:87,avgAlpha:38,squadSize:127,squadActive:89,totalOutcomes:14200,totalCapital:182000,trendUp:true},
+  {id:2,name:"DeFi_Marcus",tier:"Elite",winRate:83,avgAlpha:42,squadSize:98,squadActive:76,totalOutcomes:11800,totalCapital:156000,trendUp:true},
+  {id:3,name:"Web3Sarah",tier:"Pro",winRate:78,avgAlpha:35,squadSize:64,squadActive:51,totalOutcomes:7400,totalCapital:89000,trendUp:false},
+  {id:4,name:"PayFi_Jay",tier:"Elite",winRate:82,avgAlpha:36,squadSize:83,squadActive:68,totalOutcomes:9600,totalCapital:124000,trendUp:true},
+];
+const LIVE_CAMPAIGN={
+  brand:"NovaPay",logo:"💎",
+  kpiTargets:[{type:"app_install",target:2000,current:1347},{type:"wallet_connect",target:5000,current:3820}],
+  milestones:[{pct:30,payout:7500,reached:true},{pct:60,payout:15000,reached:true},{pct:85,payout:21000,reached:false},{pct:100,payout:25000,reached:false}],
+  daysElapsed:9,daysTotal:14,alpha:38,
+  tree:[{name:"CryptoAlice",role:"XCC",alpha:38,outcomes:547,isYou:true,children:[
+    {name:"DeFi_Marcus",role:"XCC",alpha:42,outcomes:312,children:[{name:"trader_mike",role:"Fan",outcomes:89},{name:"onchain_sam",role:"Fan",outcomes:72},{name:"defi_nina",role:"Fan",outcomes:61},{name:"+14 more",role:"...",outcomes:90}]},
+    {name:"PayFi_Jay",role:"XCC",alpha:36,outcomes:188,children:[{name:"pay_whale",role:"Fan",outcomes:52},{name:"fintech_ro",role:"Fan",outcomes:41},{name:"+8 more",role:"...",outcomes:95}]},
+    {name:"crypto_fan_1",role:"Fan",outcomes:74},{name:"web3_amy",role:"Fan",outcomes:63},{name:"hodl_pete",role:"Fan",outcomes:48},{name:"+23 more",role:"...",outcomes:115}
+  ]}],
+  events:[{time:"2m",user:"trader_mike",event:"3 installs verified"},{time:"5m",user:"pay_whale",event:"2 wallet connections"},{time:"8m",user:"DeFi_Marcus",event:"5 installs verified"},{time:"12m",user:"defi_nina",event:"4 wallet connections"},{time:"18m",user:"CryptoAlice",event:"4 installs verified",isYou:true}],
+};
+const T={bg:"#0a0b0f",sf:"#12131a",bd:"#1e2030",bda:"#3b82f6",tx:"#e2e4eb",td:"#6b7194",tm:"#3d4166",ac:"#3b82f6",acg:"rgba(59,130,246,0.12)",gn:"#22c55e",gng:"rgba(34,197,94,0.10)",or:"#f59e0b",org:"rgba(245,158,11,0.10)",rd:"#ef4444",pr:"#a855f7",prg:"rgba(168,85,247,0.10)"};
+const Badge=({children,c=T.ac,bg=T.acg})=><span style={{display:"inline-flex",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600,color:c,background:bg,letterSpacing:"0.02em"}}>{children}</span>;
+const Stat=({label,value,sub,accent})=><div style={{background:accent?T.acg:T.sf,border:`1px solid ${accent?T.bda:T.bd}`,borderRadius:8,padding:"12px 14px",flex:1,minWidth:80}}><div style={{fontSize:10,color:T.td,fontWeight:600,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:3}}>{label}</div><div style={{fontSize:18,fontWeight:700,color:accent?T.ac:T.tx,fontFamily:"'JetBrains Mono',monospace"}}>{value}</div>{sub&&<div style={{fontSize:10,color:T.td,marginTop:2}}>{sub}</div>}</div>;
+function Tooltip({text,children}){const[s,setS]=useState(false);return<span style={{position:"relative",cursor:"help"}} onMouseEnter={()=>setS(true)} onMouseLeave={()=>setS(false)}>{children}{s&&<span style={{position:"absolute",bottom:"120%",left:"50%",transform:"translateX(-50%)",background:"#1a1b25",border:`1px solid ${T.bd}`,borderRadius:6,padding:"8px 12px",fontSize:11,color:T.td,whiteSpace:"nowrap",zIndex:99,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>{text}</span>}</span>;}
+function TreeNode({node,total,indent=0}){
+  const pct=total>0?((node.outcomes/total)*100).toFixed(1):0;
+  const isXCC=node.role==="XCC",isMore=node.role==="...",isYou=node.isYou;
+  const pl=indent*22;
+  return<><div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,opacity:isMore?0.45:1,background:isYou?"rgba(168,85,247,0.08)":"transparent",borderRadius:isYou?6:0,margin:isYou?"2px -6px":"0",padding:isYou?`5px 6px 5px ${pl+6}px`:`5px 0 5px ${pl}px`}}>
+    {indent>0&&<span style={{color:T.tm,fontSize:9}}>└─</span>}
+    <span style={{fontSize:13}}>{isXCC?"⬡":isMore?"…":"○"}</span>
+    <span style={{color:isYou?T.pr:T.tx,fontWeight:isXCC?600:400}}>{node.name}</span>
+    {isYou&&<Badge c={T.pr} bg={T.prg}>YOU</Badge>}
+    {isXCC&&!isYou&&<Badge c={T.pr} bg={T.prg}>α{node.alpha}%</Badge>}
+    {isXCC&&isYou&&<Badge c={T.gn} bg={T.gng}>α{node.alpha}%</Badge>}
+    <span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:isMore?T.tm:T.gn,fontWeight:600}}>{node.outcomes}</span>
+    {!isMore&&<span style={{fontSize:11,color:T.td,minWidth:40,textAlign:"right"}}>{pct}%</span>}
+  </div>{node.children?.map((c,i)=><TreeNode key={i} node={c} total={total} indent={indent+1}/>)}</>;
+}
+const sqEst=b=>b.kpis.reduce((s,kp)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);return s+Math.max(1,Math.round((kp.target/1000)*(k?.avgSquadsPerK||6)));},0);
+const memEst=b=>b.kpis.reduce((s,kp)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);const sq=Math.max(1,Math.round((kp.target/1000)*(k?.avgSquadsPerK||6)));return s+sq*(k?.avgMembersPerSquad||35);},0);
+
+function App(){
+  const[role,setRole]=useState(null);
+  const[brandName,setBrandName]=useState("");
+  const[bStep,setBStep]=useState(1);
+  const[selectedKPIs,setSelectedKPIs]=useState([]);
+  const[kpiTargets,setKpiTargets]=useState({});
+  const[budget,setBudget]=useState("");
+  const[days,setDays]=useState(14);
+  const[msCount,setMsCount]=useState(4);
+  const[milestones,setMilestones]=useState([{pct:30,pp:30},{pct:60,pp:60},{pct:85,pp:88},{pct:100,pp:100}]);
+  const[eligibility,setEligibility]=useState("open");
+  const[minTier,setMinTier]=useState("any");const[minWin,setMinWin]=useState(0);const[catF,setCatF]=useState("any");
+  const[bWeb,setBWeb]=useState("");const[bTwit,setBTwit]=useState("");const[bDesc,setBDesc]=useState("");
+  const[customFields,setCustomFields]=useState([]);
+  const[showCheckout,setShowCheckout]=useState(false);
+  const[bAnimOut,setBAnimOut]=useState(0);
+  const[xStep,setXStep]=useState(1);
+  const[selBounty,setSelBounty]=useState(null);
+  const[xAlpha,setXAlpha]=useState(38);
+  const[xAnimOut,setXAnimOut]=useState(0);
+
+  const sugBudget=selectedKPIs.reduce((s,id)=>{const k=KPI_TYPES.find(x=>x.id===id);return s+(kpiTargets[id]||0)*(k?.avgCost||0);},0);
+  const tSquads=selectedKPIs.reduce((s,id)=>{const k=KPI_TYPES.find(x=>x.id===id);return s+Math.max(1,Math.round(((kpiTargets[id]||0)/1000)*(k?.avgSquadsPerK||6)));},0);
+  const tMembers=selectedKPIs.reduce((s,id)=>{const k=KPI_TYPES.find(x=>x.id===id);const sq=Math.max(1,Math.round(((kpiTargets[id]||0)/1000)*(k?.avgSquadsPerK||6)));return s+sq*(k?.avgMembersPerSquad||35);},0);
+  const actBudget=budget||sugBudget||25000;
+  const hasTargets=selectedKPIs.length>0&&selectedKPIs.every(id=>(kpiTargets[id]||0)>0);
+  const toggleKPI=id=>setSelectedKPIs(p=>p.includes(id)?p.filter(k=>k!==id):[...p,id]);
+  const updateMs=(i,f,v)=>{const ms=[...milestones];ms[i]={...ms[i],[f]:Math.max(0,Math.min(100,Number(v)||0))};setMilestones(ms);};
+  const setMsC=c=>{c=Math.max(2,Math.min(6,c));setMsCount(c);const ms=[];for(let i=0;i<c;i++){ms.push(milestones[i]||{pct:Math.round(((i+1)/c)*100),pp:i===c-1?100:Math.round(((i+1)/c)*95)});}setMilestones(ms.slice(0,c));};
+  const filteredXCCs=ELIGIBLE_XCCS.filter(x=>{if(eligibility==="open")return true;if(minTier!=="any"&&x.tier!==minTier&&!(minTier==="Pro"&&x.tier==="Elite"))return false;if(minWin>0&&x.winRate<minWin)return false;return true;});
+
+  useEffect(()=>{if(bStep===7){const tgt=LIVE_CAMPAIGN.kpiTargets[0].current;const s=Date.now();const tick=()=>{const p=Math.min((Date.now()-s)/2000,1);setBAnimOut(Math.round((1-Math.pow(1-p,3))*tgt));if(p<1)requestAnimationFrame(tick);};requestAnimationFrame(tick);}},[bStep]);
+  useEffect(()=>{if(xStep===4){const tgt=LIVE_CAMPAIGN.kpiTargets[0].current;const s=Date.now();const tick=()=>{const p=Math.min((Date.now()-s)/2000,1);setXAnimOut(Math.round((1-Math.pow(1-p,3))*tgt));if(p<1)requestAnimationFrame(tick);};requestAnimationFrame(tick);}},[xStep]);
+
+  const W={fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.tx,minHeight:"100vh",maxWidth:860,margin:"0 auto",padding:"0 20px 40px"};
+  const C={background:T.sf,border:`1px solid ${T.bd}`,borderRadius:10,padding:20,marginBottom:14};
+  const B1={background:T.ac,color:"#fff",border:"none",borderRadius:7,padding:"11px 24px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"};
+  const B2={...B1,background:"transparent",border:`1px solid ${T.bd}`,color:T.td};
+  const I={background:T.bg,border:`1px solid ${T.bd}`,borderRadius:7,padding:"9px 12px",fontSize:14,color:T.tx,fontFamily:"'JetBrains Mono',monospace",outline:"none",width:"100%",boxSizing:"border-box"};
+  const IT={...I,fontFamily:"'DM Sans',sans-serif"};
+  const L={fontSize:12,color:T.td,fontWeight:600,marginBottom:4,display:"block"};
+  const nav=(back,next,lbl="Next →",dis=false,col)=><div style={{display:"flex",justifyContent:"space-between",marginTop:20}}><button style={B2} onClick={back}>← Back</button><button style={{...B1,opacity:dis?0.4:1,...(col?{background:col}:{})}} disabled={dis} onClick={next}>{lbl}</button></div>;
+
+  // ═══ ROLE SELECTOR ═══
+  if(!role)return<div style={W}><div style={{textAlign:"center",paddingTop:50}}>
+    <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.18em",color:T.ac,textTransform:"uppercase",marginBottom:10}}>Xeet Protocol · Interactive PoC</div>
+    <h1 style={{fontSize:30,fontWeight:700,margin:"0 0 10px",background:"linear-gradient(135deg,#e2e4eb,#6b7194)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Choose Your Perspective</h1>
+    <p style={{fontSize:14,color:T.td,maxWidth:480,margin:"0 auto 28px",lineHeight:1.6}}>Experience the platform from either side.</p>
+    <div style={{display:"flex",gap:12,maxWidth:560,margin:"0 auto"}}>
+      <div style={{...C,flex:1,cursor:"pointer",textAlign:"left",padding:24}} onClick={()=>setRole("brand")} onMouseEnter={e=>e.currentTarget.style.borderColor=T.ac} onMouseLeave={e=>e.currentTarget.style.borderColor=T.bd}>
+        <div style={{fontSize:28,marginBottom:8}}>🏢</div><div style={{fontSize:16,fontWeight:700,marginBottom:4}}>I'm a Brand / Sponsor</div><div style={{fontSize:12,color:T.td,lineHeight:1.6}}>Create a bounty, set KPIs, fund a vault, watch outcomes.</div>
+      </div>
+      <div style={{...C,flex:1,cursor:"pointer",textAlign:"left",padding:24}} onClick={()=>setRole("xcc")} onMouseEnter={e=>e.currentTarget.style.borderColor=T.pr} onMouseLeave={e=>e.currentTarget.style.borderColor=T.bd}>
+        <div style={{fontSize:28,marginBottom:8}}>⬡</div><div style={{fontSize:16,fontWeight:700,marginBottom:4}}>I'm a Certified Creator</div><div style={{fontSize:12,color:T.td,lineHeight:1.6}}>Browse bounties, assess squad readiness, set α, coordinate.</div>
+      </div>
+    </div>
+  </div></div>;
+
+  // ═══ BRAND FLOW ═══
+  if(role==="brand"){
+    const totalBS=7;
+    const stepBar=<div style={{display:"flex",gap:3,marginBottom:24,justifyContent:"center"}}>{Array.from({length:totalBS},(_,i)=>i+1).map(s=><div key={s} style={{width:bStep===s?28:7,height:3,borderRadius:2,background:bStep>=s?T.ac:T.bd,transition:"all 0.3s"}}/>)}</div>;
+    const hdr=(n,t,s)=><><div style={{fontSize:11,color:T.ac,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:3}}>Step {n}/{totalBS}</div><h2 style={{fontSize:21,fontWeight:700,margin:"0 0 4px"}}>{t}</h2><p style={{fontSize:13,color:T.td,margin:"0 0 18px",lineHeight:1.5}}>{s}</p></>;
+
+    if(bStep===1)return<div style={W}>{stepBar}{hdr(1,"Brand Name","Enter your brand name.")}<div style={{...C,maxWidth:400}}><div style={L}>Brand / Project Name</div><input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. NovaPay" style={{...IT,fontSize:16}} autoFocus/></div><div style={{display:"flex",justifyContent:"space-between",marginTop:20}}><button style={B2} onClick={()=>setRole(null)}>← Roles</button><button style={{...B1,opacity:brandName.trim()?1:0.4}} disabled={!brandName.trim()} onClick={()=>setBStep(2)}>Next →</button></div></div>;
+
+    if(bStep===2)return<div style={W}>{stepBar}{hdr(2,"Define Outcomes","Select verifiable KPIs.")}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>{KPI_TYPES.map(k=>{const on=selectedKPIs.includes(k.id);return<div key={k.id} onClick={()=>toggleKPI(k.id)} style={{...C,cursor:"pointer",marginBottom:0,padding:14,border:`1px solid ${on?T.bda:T.bd}`,background:on?T.acg:T.sf}}><div style={{fontSize:20,marginBottom:4}}>{k.icon}</div><div style={{fontSize:13,fontWeight:600}}>{k.label}</div><div style={{fontSize:10,color:T.td,marginTop:3}}>{k.verification}</div><div style={{fontSize:10,color:T.tm}}>~${k.avgCost}/{k.unit}</div>{on&&<div style={{marginTop:6,fontSize:10,color:T.ac,fontWeight:700}}>✓</div>}</div>;})}</div>
+      {selectedKPIs.length>0&&<div style={{marginTop:16}}><div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Set targets</div>{selectedKPIs.map(id=>{const k=KPI_TYPES.find(x=>x.id===id);return<div key={id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}><span style={{width:24}}>{k.icon}</span><span style={{fontSize:13,fontWeight:600,minWidth:120}}>{k.label}</span><input type="number" placeholder="2000" value={kpiTargets[id]||""} onChange={e=>setKpiTargets({...kpiTargets,[id]:Number(e.target.value)||""})} style={{...I,width:120,flex:"none"}}/><span style={{fontSize:12,color:T.td}}>{k.unit}s</span></div>;})}</div>}
+      {hasTargets&&<div style={{...C,background:T.acg,border:`1px solid ${T.bda}`,marginTop:12}}><div style={{fontSize:11,fontWeight:700,color:T.ac,textTransform:"uppercase",marginBottom:8}}>📊 Platform Intelligence</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:T.td}}>Squads needed</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{tSquads}</div><div style={{fontSize:10,color:T.td}}>~{tMembers.toLocaleString()} members</div></div><div><div style={{fontSize:10,color:T.td}}>Suggested budget</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>${Math.round(sugBudget).toLocaleString()}</div></div><div><div style={{fontSize:10,color:T.td}}>KPIs</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{selectedKPIs.length}</div></div></div></div>}
+      {hasTargets&&selectedKPIs.length>=2&&(()=>{
+        const totalBudgetWeighted = selectedKPIs.reduce((s,id)=>{const k=KPI_TYPES.find(x=>x.id===id);return s+(kpiTargets[id]||0)*(k?.avgCost||0);},0);
+        const weightedAffinity = selectedKPIs.reduce((s,id)=>{const k=KPI_TYPES.find(x=>x.id===id);const w=(kpiTargets[id]||0)*(k?.avgCost||0);return s+(k?.affinity||0.5)*w;},0)/(totalBudgetWeighted||1);
+        const socialPct=Math.round((1-weightedAffinity)*100);
+        const capitalPct=Math.round(weightedAffinity*100);
+        const dominant=socialPct>capitalPct?"social-reach":"capital-active";
+        const ratio=socialPct>capitalPct?`${socialPct}:${capitalPct}`:`${capitalPct}:${socialPct}`;
+        return<div style={{...C,marginTop:8,background:"rgba(168,85,247,0.06)",border:`1px solid rgba(168,85,247,0.15)`}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.pr,textTransform:"uppercase",marginBottom:8}}>📐 Bounty Profile Analysis</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.td,marginBottom:3}}><span>🗣 Social-Reach</span><span>💰 Capital-Active</span></div>
+              <div style={{height:8,background:T.bd,borderRadius:4,overflow:"hidden",display:"flex"}}>
+                <div style={{width:`${socialPct}%`,height:"100%",background:"linear-gradient(90deg,#3b82f6,#8b5cf6)",borderRadius:"4px 0 0 4px"}}/>
+                <div style={{width:`${capitalPct}%`,height:"100%",background:"linear-gradient(90deg,#f59e0b,#ef4444)",borderRadius:"0 4px 4px 0"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,fontWeight:600,marginTop:3}}><span style={{color:T.ac}}>{socialPct}%</span><span style={{color:T.or}}>{capitalPct}%</span></div>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:T.td,lineHeight:1.6}}>
+            This bounty's KPI mix favors <strong style={{color:dominant==="social-reach"?T.ac:T.or}}>{dominant} participants</strong> at a <strong style={{color:T.tx}}>{ratio}</strong> ratio.
+            {dominant==="social-reach"?" Squads with large audiences and high engagement will drive most outcomes. Best served by XCCs with strong community followings.":" Squads with on-chain active members and DeFi users will drive most outcomes. Best served by XCCs embedded in DeFi/trading communities."}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+            {selectedKPIs.map(id=>{const k=KPI_TYPES.find(x=>x.id===id);return<span key={id} style={{padding:"3px 8px",borderRadius:4,fontSize:10,fontWeight:600,background:k.affinity<0.4?"rgba(59,130,246,0.12)":k.affinity>0.6?"rgba(245,158,11,0.12)":"rgba(107,114,148,0.12)",color:k.affinity<0.4?T.ac:k.affinity>0.6?T.or:T.td}}>{k.icon} {k.label}: {k.affinityLabel}</span>;})}
+          </div>
+        </div>;
+      })()}
+      {hasTargets&&<div style={{...C,marginTop:8,border:`1px solid ${T.or}33`}}><div style={{fontSize:11,fontWeight:700,color:T.or,textTransform:"uppercase",marginBottom:8}}>🔧 Integration Requirements</div><div style={{fontSize:11,color:T.td,marginBottom:10,padding:"6px 10px",background:T.org,borderRadius:6,lineHeight:1.5}}><strong style={{color:T.or}}>Important:</strong> Bounty goes live only after we verify all endpoints. If integration breaks, campaign pauses.</div>{selectedKPIs.map(id=>{const k=KPI_TYPES.find(x=>x.id===id);return<div key={id} style={{marginBottom:10,padding:"10px 12px",background:T.bg,borderRadius:6}}><div style={{display:"flex",gap:6,marginBottom:4}}><span>{k.icon}</span><span style={{fontSize:12,fontWeight:600}}>{k.label}</span><Badge c={T.td} bg={T.sf}>{k.verification}</Badge></div><div style={{fontSize:11,color:T.td,lineHeight:1.5,marginBottom:4}}>{k.integration}</div><div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.tm,padding:"3px 8px",background:T.sf,borderRadius:4,marginBottom:4}}>{k.example}</div>{k.dataNeeded.map((d,i)=><div key={i} style={{fontSize:11,color:T.td}}><span style={{color:T.ac}}>→</span> {d}</div>)}</div>;})}</div>}
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:18}}><button style={B2} onClick={()=>setBStep(1)}>←</button><button style={{...B1,opacity:hasTargets?1:0.4}} disabled={!hasTargets} onClick={()=>setBStep(3)}>Next: Budget →</button></div></div>;
+
+    if(bStep===3)return<div style={W}>{stepBar}{hdr(3,"Budget & Milestones","Vault size and payout ladder.")}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}><div><div style={L}>Budget</div><input type="number" value={budget} onChange={e=>setBudget(Number(e.target.value)||"")} placeholder={`${Math.round(sugBudget)}`} style={I}/></div><div><div style={L}>Duration</div><div style={{display:"flex",gap:4}}>{[7,14,21,30].map(d=><button key={d} onClick={()=>setDays(d)} style={{...B2,padding:"8px 12px",fontSize:12,flex:1,background:days===d?T.acg:"transparent",borderColor:days===d?T.bda:T.bd,color:days===d?T.ac:T.td}}>{d}d</button>)}</div></div></div>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600}}>Milestones</span>{[2,3,4,5,6].map(n=><button key={n} onClick={()=>setMsC(n)} style={{...B2,padding:"3px 9px",fontSize:11,background:msCount===n?T.acg:"transparent",borderColor:msCount===n?T.bda:T.bd,color:msCount===n?T.ac:T.tm}}>{n}</button>)}</div>
+      <div style={C}>{milestones.slice(0,msCount).map((m,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr auto",gap:"4px 10px",alignItems:"center",padding:"6px 0",borderBottom:i<msCount-1?`1px solid ${T.bd}`:"none"}}><div style={{fontSize:12,color:T.td,fontWeight:600,width:16}}>{i+1}</div><div style={{display:"flex",gap:3,alignItems:"center"}}><input type="number" value={m.pct} onChange={e=>updateMs(i,"pct",e.target.value)} style={{...I,width:55,textAlign:"center",padding:"5px",fontSize:13}}/><span style={{fontSize:11,color:T.td}}>%</span></div><div style={{display:"flex",gap:3,alignItems:"center"}}><input type="number" value={m.pp} onChange={e=>updateMs(i,"pp",e.target.value)} style={{...I,width:55,textAlign:"center",padding:"5px",fontSize:13}}/><span style={{fontSize:11,color:T.td}}>%</span></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:600,color:i===msCount-1?T.gn:T.tx,minWidth:70,textAlign:"right"}}>${Math.round(actBudget*m.pp/100).toLocaleString()}</div></div>)}</div>
+      {nav(()=>setBStep(2),()=>setBStep(4),"Next: Eligibility →")}</div>;
+
+    if(bStep===4)return<div style={W}>{stepBar}{hdr(4,"Participation","Open or filtered?")}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>{[{id:"open",i:"🌐",l:"Open (FCFS)",c:T.gn,g:T.gng},{id:"filtered",i:"🎯",l:"Filtered",c:T.or,g:T.org}].map(o=><div key={o.id} onClick={()=>setEligibility(o.id)} style={{...C,flex:1,cursor:"pointer",marginBottom:0,padding:14,border:`1px solid ${eligibility===o.id?o.c:T.bd}`,background:eligibility===o.id?o.g:T.sf}}><div style={{fontSize:18,marginBottom:3}}>{o.i}</div><div style={{fontSize:13,fontWeight:600}}>{o.l}</div></div>)}</div>
+      {nav(()=>setBStep(3),()=>setBStep(5),"Next: Brand Info →")}</div>;
+
+    if(bStep===5)return<div style={W}>{stepBar}{hdr(5,"Brand Context","Visible to all participants.")}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}><div><div style={L}>Website</div><input value={bWeb} onChange={e=>setBWeb(e.target.value)} style={IT} placeholder="https://..."/></div><div><div style={L}>X</div><input value={bTwit} onChange={e=>setBTwit(e.target.value)} style={IT} placeholder="@handle"/></div></div>
+      <div style={{marginBottom:12}}><div style={L}>Description</div><textarea value={bDesc} onChange={e=>setBDesc(e.target.value)} rows={3} style={{...IT,resize:"vertical"}} placeholder="Product description..."/></div>
+      {nav(()=>setBStep(4),()=>setBStep(6),"Next: Review →")}</div>;
+
+    if(bStep===6)return<div style={W}>{stepBar}{hdr(6,"Review & Launch","Locked after funding.")}
+      <div style={C}><div style={{fontSize:15,fontWeight:700,marginBottom:10}}>{brandName}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{selectedKPIs.map(id=>{const k=KPI_TYPES.find(x=>x.id===id);return<div key={id} style={{background:T.acg,borderRadius:4,padding:"3px 8px",fontSize:11}}>{k.icon} <strong>{(kpiTargets[id]||0).toLocaleString()}</strong> {k.label}</div>;})}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:T.td,fontWeight:600}}>VAULT</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>${actBudget.toLocaleString()}</div></div><div><div style={{fontSize:10,color:T.td,fontWeight:600}}>DAYS</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{days}</div></div><div><div style={{fontSize:10,color:T.td,fontWeight:600}}>MODE</div><div style={{fontSize:13,fontWeight:600}}>{eligibility==="open"?"🌐 Open":"🎯 Filtered"}</div></div></div></div>
+      <button style={{...B1,background:T.gn,width:"100%",padding:13,fontSize:14}} onClick={()=>setShowCheckout(true)}>Checkout →</button>
+      {showCheckout&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(4px)"}} onClick={()=>setShowCheckout(false)}><div style={{...C,maxWidth:400,margin:0,padding:24}} onClick={e=>e.stopPropagation()}>
+        <div style={{textAlign:"center",marginBottom:14}}><div style={{fontSize:20}}>🔒</div><div style={{fontSize:16,fontWeight:700}}>Fund & Launch</div></div>
+        <div style={{borderBottom:`1px solid ${T.bd}`,paddingBottom:10,marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}><Tooltip text="Escrowed. Released on verified outcomes."><span style={{borderBottom:`1px dashed ${T.td}`,color:T.td}}>Vault</span></Tooltip><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>${actBudget.toLocaleString()}</span></div><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}><Tooltip text="Verification, disputes, settlement."><span style={{borderBottom:`1px dashed ${T.td}`,color:T.td}}>Platform Fee</span></Tooltip><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>${PLATFORM_FEE.toLocaleString()}</span></div></div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:15,fontWeight:700}}><span>Total</span><span style={{fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>${(actBudget+PLATFORM_FEE).toLocaleString()} USDC</span></div>
+        <div style={{marginTop:12,padding:"8px 10px",background:T.bg,borderRadius:6,fontSize:11,color:T.td}}><div style={{fontWeight:600,color:T.tx,marginBottom:3}}>Destination</div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:T.ac}}>{PLATFORM_WALLET}</div></div>
+        <div style={{display:"flex",gap:8,marginTop:16}}><button style={{...B2,flex:1}} onClick={()=>setShowCheckout(false)}>Cancel</button><button style={{...B1,background:T.gn,flex:2}} onClick={()=>{setShowCheckout(false);setBStep(7);}}>🔒 Confirm & Fund</button></div>
+      </div></div>}
+      <button style={{...B2,marginTop:8}} onClick={()=>setBStep(5)}>← Back</button></div>;
+
+    if(bStep===7){const camp=LIVE_CAMPAIGN;const pc=bAnimOut;const rc=camp.milestones.filter(m=>m.reached).length;const ul=camp.milestones.filter(m=>m.reached).slice(-1)[0]?.payout||0;
+      return<div style={W}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0 6px"}}><div><div style={{fontSize:10,color:T.td,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Live · {brandName}</div><h2 style={{fontSize:19,fontWeight:700,margin:"3px 0 0"}}>{brandName} Campaign</h2></div><Badge c={T.gn} bg={T.gng}>● LIVE Day {camp.daysElapsed}/{camp.daysTotal}</Badge></div>
+        <div style={{display:"flex",gap:8,marginTop:12}}>{camp.kpiTargets.map((kp,i)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);return<Stat key={i} label={`${k?.icon} ${k?.label}`} value={(i===0?pc:kp.current).toLocaleString()} sub={`of ${kp.target.toLocaleString()}`} accent={i===0}/>;})}<Stat label="Milestone" value={`${rc}/${camp.milestones.length}`} sub={`$${ul.toLocaleString()} unlocked`}/></div>
+        <div style={{...C,marginTop:12}}><div style={{fontSize:12,fontWeight:600,marginBottom:8}}>Attribution Tree</div>{camp.tree.map((n,i)=><TreeNode key={i} node={n} total={pc||camp.kpiTargets[0].current}/>)}</div>
+        <div style={{...C}}><div style={{fontSize:12,fontWeight:600,marginBottom:8}}>Live Feed</div>{camp.events.map((ev,i)=><div key={i} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:i<camp.events.length-1?`1px solid ${T.bd}`:"none",fontSize:11,opacity:1-i*0.1}}><span style={{color:T.tm,minWidth:36,fontSize:10}}>{ev.time}</span><span style={{width:5,height:5,borderRadius:"50%",background:T.gn,marginTop:4}}/><span><strong>{ev.user}</strong> <span style={{color:T.td}}>{ev.event}</span></span></div>)}</div>
+        <div style={{textAlign:"center",marginTop:16,padding:"14px 0",borderTop:`1px solid ${T.bd}`}}><button style={B2} onClick={()=>{setRole(null);setBStep(1);setSelectedKPIs([]);setKpiTargets({});}}>↺ Restart</button></div></div>;
+    }
+  }
+
+  // ═══ XCC FLOW ═══
+  if(role==="xcc"){
+
+    // XCC STEP 1 — Profile + Bounty Board (Grid)
+    if(xStep===1)return<div style={W}>
+      {/* Profile Card */}
+      <div style={{...C,display:"flex",gap:16,alignItems:"center",padding:16,marginTop:12}}>
+        <div style={{width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.pr},${T.ac})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>👩‍💻</div>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+            <span style={{fontSize:16,fontWeight:700}}>{MY_XCC.name}</span>
+            <Badge c={T.pr} bg={T.prg}>{MY_XCC.tier}</Badge>
+            <Badge c={T.gn} bg={T.gng}>{MY_XCC.squadActive}/{MY_XCC.squadSize} active</Badge>
+          </div>
+          <div style={{display:"flex",gap:16,fontSize:12,color:T.td}}>
+            <span><strong style={{color:T.tx}}>{MY_XCC.winRate}%</strong> win rate</span>
+            <span><strong style={{color:T.tx}}>α{MY_XCC.avgAlpha}%</strong> avg</span>
+            <span><strong style={{color:T.tx}}>{(MY_XCC.totalOutcomes/1000).toFixed(1)}K</strong> outcomes</span>
+            <span><strong style={{color:T.gn}}>${(MY_XCC.totalCapital/1000).toFixed(0)}K</strong> earned</span>
+            <span><strong style={{color:T.tx}}>{MY_XCC.campaigns}</strong> campaigns</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,marginTop:8}}>
+        <h2 style={{fontSize:18,fontWeight:700}}>Open Bounties</h2>
+        <span style={{fontSize:12,color:T.td}}>{BOUNTIES.length} available</span>
+      </div>
+
+      <div style={{fontSize:11,color:T.td,marginBottom:12,padding:"8px 12px",background:T.prg,borderRadius:6,border:`1px solid ${T.pr}22`,lineHeight:1.5}}>
+        ⬡ Squad & coverage estimates are based on historical campaign data and your squad's performance. Actual results vary by campaign execution.
+      </div>
+
+      {/* Bounty Grid */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {BOUNTIES.map(b=>{
+          const sq=sqEst(b),mem=memEst(b);
+          const cov=Math.min(100,Math.round(MY_XCC.squadActive/mem*100));
+          return<div key={b.id} style={{...C,cursor:"pointer",marginBottom:0,padding:16,transition:"all 0.15s"}}
+            onClick={()=>{setSelBounty(b);setXStep(2);}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.pr} onMouseLeave={e=>e.currentTarget.style.borderColor=T.bd}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <div style={{width:36,height:36,borderRadius:8,background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{b.logo}</div>
+                <div><div style={{fontSize:14,fontWeight:700}}>{b.brand}</div><div style={{fontSize:10,color:T.td}}>{b.cat} · {b.posted}</div></div>
+              </div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>${b.budget.toLocaleString()}</div></div>
+            </div>
+            <div style={{fontSize:11,color:T.td,marginBottom:8,lineHeight:1.4}}>{b.desc}</div>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
+              {b.kpis.map((kp,i)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);return<span key={i} style={{background:T.acg,borderRadius:4,padding:"2px 6px",fontSize:10}}>{k?.icon} {kp.target.toLocaleString()}</span>;})}
+              <span style={{background:T.sf,borderRadius:4,padding:"2px 6px",fontSize:10,color:T.td}}>{b.days}d</span>
+              <span style={{background:b.mode==="open"?T.gng:T.org,borderRadius:4,padding:"2px 6px",fontSize:10,color:b.mode==="open"?T.gn:T.or}}>{b.mode==="open"?"🌐 Open":"🎯 Filtered"}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.td,paddingTop:8,borderTop:`1px solid ${T.bd}`}}>
+              <span>~{sq} squads · ~{mem} members</span>
+              <span style={{color:cov>=60?T.gn:cov>=30?T.or:T.rd,fontWeight:600}}>{cov}% coverage</span>
+            </div>
+          </div>;
+        })}
+      </div>
+      <button style={{...B2,marginTop:14}} onClick={()=>setRole(null)}>← Back to roles</button>
+    </div>;
+
+    // XCC STEP 2 — Bounty Detail
+    if(xStep===2&&selBounty){const b=selBounty;const sq=sqEst(b),mem=memEst(b),cov=Math.min(100,Math.round(MY_XCC.squadActive/mem*100));
+      return<div style={W}>
+        <div style={{display:"flex",gap:12,alignItems:"center",marginTop:12,marginBottom:16}}>
+          <div style={{width:48,height:48,borderRadius:10,background:T.sf,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,border:`1px solid ${T.bd}`}}>{b.logo}</div>
+          <div><div style={{fontSize:20,fontWeight:700}}>{b.brand}</div><div style={{fontSize:12,color:T.td}}>{b.cat} · {b.days}d · {b.mode==="open"?"🌐 Open":"🎯 Filtered"}</div></div>
+        </div>
+        <div style={{fontSize:12,color:T.td,lineHeight:1.6,marginBottom:14}}>{b.desc}</div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <Stat label="Vault" value={`$${b.budget.toLocaleString()}`} accent/>
+          <Stat label="Est. Squads" value={sq} sub={`~${mem} members`}/>
+          <Stat label="Your Coverage" value={`${cov}%`} sub={cov>=60?"Strong match":cov>=30?"Partial — recruit":"Need sub-XCCs"}/>
+        </div>
+
+        <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>KPIs to Deliver</div>
+        <div style={C}>{b.kpis.map((kp,i)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);const kSq=Math.max(1,Math.round((kp.target/1000)*(k?.avgSquadsPerK||6)));const kMem=kSq*(k?.avgMembersPerSquad||35);const yourShare=Math.round(MY_XCC.squadActive*(kp.target/mem));
+          return<div key={i} style={{padding:"10px 0",borderBottom:i<b.kpis.length-1?`1px solid ${T.bd}`:"none"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:14,fontWeight:600}}>{k?.icon} {kp.target.toLocaleString()} {k?.label}</span>
+              <Badge c={T.td} bg={T.sf}>{k?.verification}</Badge>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div style={{padding:"6px 8px",background:T.bg,borderRadius:4}}><div style={{fontSize:9,color:T.td}}>SQUADS NEEDED</div><div style={{fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{kSq}</div><div style={{fontSize:9,color:T.td}}>{kMem} members</div></div>
+              <div style={{padding:"6px 8px",background:T.bg,borderRadius:4}}><div style={{fontSize:9,color:T.td}}>AVG COST</div><div style={{fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>${k?.avgCost}</div><div style={{fontSize:9,color:T.td}}>per {k?.unit}</div></div>
+              <div style={{padding:"6px 8px",background:T.bg,borderRadius:4}}><div style={{fontSize:9,color:T.td}}>YOUR SQUAD'S EST.</div><div style={{fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>{yourShare.toLocaleString()}</div><div style={{fontSize:9,color:T.td}}>deliverable</div></div>
+            </div>
+          </div>;})}
+        </div>
+
+        <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Milestones</div>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>{b.ms.map((m,i)=><div key={i} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:6,background:T.sf,border:`1px solid ${T.bd}`}}><div style={{fontSize:10,color:T.td}}>≥{m.pct}%</div><div style={{fontSize:14,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,marginTop:2}}>${Math.round(b.budget*m.pay/100).toLocaleString()}</div></div>)}</div>
+
+        {nav(()=>setXStep(1),()=>setXStep(3),"Configure Offer →")}
+      </div>;
+    }
+
+    // XCC STEP 3 — Offer / Alpha Config
+    if(xStep===3&&selBounty){const b=selBounty;const yourCut=Math.round(b.budget*(1-xAlpha/100));const squadPool=Math.round(b.budget*(xAlpha/100));const perMem=MY_XCC.squadActive>0?Math.round(squadPool/MY_XCC.squadActive):0;const mem=memEst(b);
+      return<div style={W}>
+        <div style={{fontSize:10,color:T.pr,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:3,marginTop:12}}>Configure Offer · {b.brand}</div>
+        <h2 style={{fontSize:20,fontWeight:700,margin:"0 0 4px"}}>Set Your Economics</h2>
+        <p style={{fontSize:12,color:T.td,marginBottom:16}}>α is public and permanent for this campaign. It becomes part of your reputation.</p>
+
+        <div style={C}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{fontSize:13,fontWeight:600}}>Alpha (α) — Squad Share</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.pr}}>{xAlpha}%</span></div>
+          <input type="range" min={10} max={50} value={xAlpha} onChange={e=>setXAlpha(Number(e.target.value))} style={{width:"100%",accentColor:T.pr}}/>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.tm,marginTop:4}}><span>10% (keep more)</span><span>50% (share more)</span></div>
+          <div style={{marginTop:16,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div style={{textAlign:"center",padding:10,borderRadius:6,background:T.bg}}><div style={{fontSize:10,color:T.td}}>Your Take (100%)</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.gn}}>${yourCut.toLocaleString()}</div><div style={{fontSize:10,color:T.td}}>{100-xAlpha}%</div></div>
+            <div style={{textAlign:"center",padding:10,borderRadius:6,background:T.bg}}><div style={{fontSize:10,color:T.td}}>Squad Pool (100%)</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:T.pr}}>${squadPool.toLocaleString()}</div><div style={{fontSize:10,color:T.td}}>{xAlpha}%</div></div>
+            <div style={{textAlign:"center",padding:10,borderRadius:6,background:T.bg}}><div style={{fontSize:10,color:T.td}}>Per Member</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>${perMem.toLocaleString()}</div><div style={{fontSize:10,color:T.td}}>{MY_XCC.squadActive} active</div></div>
+          </div>
+        </div>
+
+        <div style={{...C,background:T.prg,border:`1px solid ${T.pr}22`}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.pr,marginBottom:6}}>⬡ Alpha Strategy</div>
+          <div style={{fontSize:11,color:T.td,lineHeight:1.7}}>
+            {xAlpha<25&&"⚠️ Low alpha. Squad earns less — may reduce participation. Works if you have very high personal reach."}
+            {xAlpha>=25&&xAlpha<35&&"Moderate alpha. Good balance for experienced XCCs. Healthy personal take, still motivating."}
+            {xAlpha>=35&&xAlpha<45&&"✓ Strong alpha — the sweet spot. Members earn enough to go hard. Best for most campaigns."}
+            {xAlpha>=45&&"🔥 Very generous. Squad will be fired up. Best for building long-term loyalty or recruiting sub-XCCs."}
+            <br/><br/>Your historical avg is {MY_XCC.avgAlpha}%. {xAlpha>MY_XCC.avgAlpha+5?"Going above signals investment in your squad.":xAlpha<MY_XCC.avgAlpha-5?"Below your average — squad may notice.":"Consistent with your track record."}
+          </div>
+        </div>
+
+        <div style={C}>
+          <div style={{fontSize:12,fontWeight:600,marginBottom:8}}>Squad Readiness</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+            <div style={{padding:8,background:T.bg,borderRadius:6,textAlign:"center"}}><div style={{fontSize:9,color:T.td}}>ACTIVE</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{MY_XCC.squadActive}</div><div style={{fontSize:9,color:T.td}}>of {MY_XCC.squadSize}</div></div>
+            <div style={{padding:8,background:T.bg,borderRadius:6,textAlign:"center"}}><div style={{fontSize:9,color:T.td}}>ACTIVATION</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:Math.round(MY_XCC.squadActive/MY_XCC.squadSize*100)>60?T.gn:T.or}}>{Math.round(MY_XCC.squadActive/MY_XCC.squadSize*100)}%</div></div>
+            <div style={{padding:8,background:T.bg,borderRadius:6,textAlign:"center"}}><div style={{fontSize:9,color:T.td}}>COVERAGE</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:MY_XCC.squadActive>=mem?T.gn:T.or}}>{Math.min(100,Math.round(MY_XCC.squadActive/mem*100))}%</div></div>
+            <div style={{padding:8,background:T.bg,borderRadius:6,textAlign:"center"}}><div style={{fontSize:9,color:T.td}}>SUB-XCCs REC.</div><div style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{Math.max(0,sqEst(b)-1)}</div></div>
+          </div>
+        </div>
+
+        <div style={{...C,background:T.org,border:`1px solid ${T.or}22`}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.or,marginBottom:4}}>💳 Card Commitment</div>
+          <div style={{fontSize:11,color:T.td,lineHeight:1.6}}>Squad members must commit one of their held Creator Cards to participate in this bounty. Each member can only commit to <strong style={{color:T.tx}}>one XCC per bounty</strong> but can participate in multiple bounties simultaneously under different XCCs. Card commitment locks when the member accepts the bounty and unlocks at settlement.</div>
+        </div>
+
+        {nav(()=>setXStep(2),()=>setXStep(4),"Submit Offer & Go Live →",false,T.gn)}
+      </div>;
+    }
+
+    // XCC STEP 4 — Live Dashboard (XCC POV)
+    if(xStep===4){const camp=LIVE_CAMPAIGN;const pc=xAnimOut;const rc=camp.milestones.filter(m=>m.reached).length;const ul=camp.milestones.filter(m=>m.reached).slice(-1)[0]?.payout||0;const yourTake=Math.round(ul*(1-camp.alpha/100));const squadPool=Math.round(ul*(camp.alpha/100));
+      return<div style={W}>
+        {/* Header with profile */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0 6px"}}>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:`linear-gradient(135deg,${T.pr},${T.ac})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>👩‍💻</div>
+            <div><div style={{fontSize:10,color:T.pr,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{MY_XCC.name} · Campaign</div><h2 style={{fontSize:18,fontWeight:700,margin:"2px 0 0"}}>{camp.logo} {camp.brand}</h2></div>
+          </div>
+          <Badge c={T.gn} bg={T.gng}>● LIVE · Day {camp.daysElapsed}/{camp.daysTotal}</Badge>
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          {camp.kpiTargets.map((kp,i)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);return<Stat key={i} label={`${k?.icon} ${k?.label}`} value={(i===0?pc:kp.current).toLocaleString()} sub={`of ${kp.target.toLocaleString()}`} accent={i===0}/>;})
+          }<Stat label="Your Take" value={`$${yourTake.toLocaleString()}`} sub={`${100-camp.alpha}% of unlocked`}/>
+          <Stat label="Squad Pool" value={`$${squadPool.toLocaleString()}`} sub={`α${camp.alpha}%`}/>
+        </div>
+
+        <div style={{...C,marginTop:12}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>KPI Progress</div>
+          {camp.kpiTargets.map((kp,i)=>{const k=KPI_TYPES.find(x=>x.id===kp.type);const cur=i===0?pc:kp.current;const pct=Math.round(cur/kp.target*100);return<div key={i} style={{marginBottom:i<camp.kpiTargets.length-1?10:0}}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.td}}>{k?.icon} {k?.label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{pct}% · {cur.toLocaleString()}/{kp.target.toLocaleString()}</span></div><div style={{height:5,background:T.bd,borderRadius:3}}><div style={{height:"100%",borderRadius:3,width:`${Math.min(pct,100)}%`,background:`linear-gradient(90deg,${T.ac},${T.gn})`,transition:"width 2s ease"}}/></div></div>;})}</div>
+
+        <div style={{...C}}><div style={{fontSize:12,fontWeight:600,marginBottom:6}}>Milestones</div>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${camp.milestones.length},1fr)`,gap:5}}>{camp.milestones.map((m,i)=><div key={i} style={{textAlign:"center",padding:"6px 3px",borderRadius:5,background:m.reached?T.gng:"transparent",border:`1px solid ${m.reached?T.gn+"33":T.bd}`}}><div style={{fontSize:10,color:m.reached?T.gn:T.td,fontWeight:600}}>≥{m.pct}%</div><div style={{fontSize:13,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:m.reached?T.gn:T.tm}}>${m.payout.toLocaleString()}</div>{m.reached&&<div style={{fontSize:9,color:T.gn}}>✓</div>}</div>)}</div></div>
+
+        <div style={{...C}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:12,fontWeight:600}}>Your Attribution Tree</span><span style={{fontSize:10,color:T.td}}>You're highlighted</span></div>
+          {camp.tree.map((n,i)=><TreeNode key={i} node={n} total={pc||camp.kpiTargets[0].current}/>)}</div>
+
+        <div style={{...C}}><div style={{fontSize:12,fontWeight:600,marginBottom:8}}>Live Feed</div>
+          {camp.events.map((ev,i)=><div key={i} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:i<camp.events.length-1?`1px solid ${T.bd}`:"none",fontSize:11,opacity:1-i*0.08,background:ev.isYou?"rgba(168,85,247,0.06)":"transparent",borderRadius:ev.isYou?4:0,margin:ev.isYou?"1px -4px":"0",padding:ev.isYou?"5px 4px":"5px 0"}}>
+            <span style={{color:T.tm,minWidth:30,fontSize:10}}>{ev.time}</span>
+            <span style={{width:5,height:5,borderRadius:"50%",background:ev.isYou?T.pr:T.gn,marginTop:4}}/>
+            <span><strong style={{color:ev.isYou?T.pr:T.tx}}>{ev.user}{ev.isYou?" (you)":""}</strong> <span style={{color:T.td}}>{ev.event}</span></span>
+          </div>)}</div>
+
+        <div style={{textAlign:"center",marginTop:16,padding:"14px 0",borderTop:`1px solid ${T.bd}`}}><button style={B2} onClick={()=>{setRole(null);setXStep(1);}}>↺ Restart</button></div>
+      </div>;
+    }
+  }
+  return null;
+}
+
+ReactDOM.render(React.createElement(App), document.getElementById('root'));
+</script>
+</body>
+</html>
