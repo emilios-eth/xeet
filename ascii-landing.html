@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ASCII Social Post Generator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#e0e0e8;font-family:'JetBrains Mono',monospace;overflow-x:hidden}
+::selection{background:rgba(0,255,136,0.25);color:#fff}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0a0a0f}
+::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:3px}
+
+/* ASCII Rain Background */
+.ascii-rain{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:hidden;opacity:0.06}
+.rain-col{position:absolute;top:-100%;font-size:14px;line-height:1.2;color:#00ff88;white-space:pre;animation:rainFall linear infinite}
+@keyframes rainFall{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
+
+/* Scan line */
+.scanline{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px)}
+
+/* Glitch effect */
+@keyframes glitch{0%,100%{text-shadow:2px 0 #ff0040,-2px 0 #00ff88}25%{text-shadow:-2px -1px #ff0040,2px 1px #00ff88}50%{text-shadow:1px 2px #ff0040,-1px -2px #00ff88}75%{text-shadow:-1px 1px #ff0040,1px -1px #00ff88}}
+@keyframes glitchBig{0%,92%,100%{transform:translate(0)}93%{transform:translate(-5px,2px)}94%{transform:translate(5px,-2px)}95%{transform:translate(-3px,1px)}96%{transform:translate(3px,-1px)}}
+@keyframes flicker{0%,97%,100%{opacity:1}98%{opacity:0.8}99%{opacity:0.95}}
+
+/* Cursor blink */
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.cursor{display:inline-block;width:10px;height:20px;background:#00ff88;animation:blink 1s step-end infinite;vertical-align:middle;margin-left:4px}
+
+/* Container */
+.container{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* Nav */
+nav{padding:20px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between}
+nav .logo{font-size:18px;font-weight:700;color:#00ff88;letter-spacing:2px}
+nav .logo span{color:#ff0040}
+nav .nav-links{display:flex;gap:32px}
+nav .nav-links a{color:#666;font-size:13px;text-decoration:none;transition:color 0.2s;letter-spacing:1px}
+nav .nav-links a:hover{color:#00ff88}
+
+/* Hero */
+.hero{padding:80px 0 60px;display:flex;align-items:center;gap:80px}
+.hero-text{flex:1}
+.hero-text .tag{display:inline-block;padding:6px 16px;border:1px solid rgba(0,255,136,0.2);border-radius:20px;font-size:11px;color:#00ff88;letter-spacing:3px;text-transform:uppercase;margin-bottom:24px;background:rgba(0,255,136,0.05)}
+.hero-text h1{font-size:48px;font-weight:800;line-height:1.15;margin-bottom:20px;animation:glitchBig 8s ease-in-out infinite,flicker 6s linear infinite;letter-spacing:-1px}
+.hero-text h1 .green{color:#00ff88}
+.hero-text h1 .red{color:#ff0040}
+.hero-text h1 .blue{color:#4488ff}
+.hero-text p{font-size:15px;color:#555;line-height:1.7;margin-bottom:36px;max-width:480px}
+.hero-buttons{display:flex;gap:16px;align-items:center}
+.btn-primary{padding:14px 32px;background:#00ff88;color:#0a0a0f;font-family:inherit;font-size:13px;font-weight:700;border:none;border-radius:6px;cursor:pointer;letter-spacing:2px;text-transform:uppercase;transition:all 0.2s}
+.btn-primary:hover{background:#00cc6a;box-shadow:0 0 30px rgba(0,255,136,0.3)}
+.btn-secondary{padding:14px 32px;background:transparent;color:#666;font-family:inherit;font-size:13px;font-weight:500;border:1px solid #222;border-radius:6px;cursor:pointer;letter-spacing:1px;transition:all 0.2s}
+.btn-secondary:hover{border-color:#444;color:#aaa}
+
+/* ASCII Avatar Container */
+.hero-avatar{position:relative;flex-shrink:0}
+.avatar-frame{position:relative;width:340px;height:400px;border:1px solid rgba(0,255,136,0.15);border-radius:12px;overflow:hidden;background:rgba(0,255,136,0.02)}
+.avatar-frame::before{content:'';position:absolute;top:0;left:0;right:0;height:28px;background:rgba(0,0,0,0.4);border-bottom:1px solid rgba(255,255,255,0.06);z-index:2}
+.avatar-frame::after{content:'> render --ascii --mode=social';position:absolute;top:6px;left:12px;font-size:10px;color:#00ff88;opacity:0.6;z-index:3}
+.avatar-dots{position:absolute;top:8px;right:12px;display:flex;gap:6px;z-index:3}
+.avatar-dots span{width:8px;height:8px;border-radius:50%}
+.avatar-dots span:nth-child(1){background:#ff5f57}
+.avatar-dots span:nth-child(2){background:#ffbd2e}
+.avatar-dots span:nth-child(3){background:#28c840}
+
+/* ASCII Art Overlay */
+.ascii-overlay{position:absolute;top:28px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;z-index:1;padding:12px}
+.ascii-art{font-size:6px;line-height:1;letter-spacing:0.5px;color:#00ff88;white-space:pre;text-align:center;animation:flicker 6s linear infinite;text-shadow:0 0 10px rgba(0,255,136,0.3)}
+
+/* Pixel char displayed as CSS pixel art */
+.pixel-avatar{position:absolute;top:28px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;z-index:0;opacity:0.15}
+.pixel-avatar img{width:200px;height:200px;image-rendering:pixelated;filter:grayscale(1) brightness(1.5) contrast(1.2)}
+
+/* Stats bar */
+.stats-bar{display:flex;gap:0;border:1px solid rgba(255,255,255,0.06);border-radius:10px;overflow:hidden;margin:0 0 80px}
+.stat{flex:1;padding:28px 24px;text-align:center;border-right:1px solid rgba(255,255,255,0.06)}
+.stat:last-child{border-right:none}
+.stat .val{font-size:28px;font-weight:700;color:#fff;margin-bottom:6px}
+.stat .val.green{color:#00ff88}
+.stat .val.red{color:#ff0040}
+.stat .val.blue{color:#4488ff}
+.stat .val.yellow{color:#ffbd2e}
+.stat .label{font-size:11px;color:#444;letter-spacing:2px;text-transform:uppercase}
+
+/* Features */
+.features{padding:60px 0 80px}
+.features .section-header{text-align:center;margin-bottom:60px}
+.features .section-header h2{font-size:28px;font-weight:700;margin-bottom:12px;letter-spacing:-0.5px}
+.features .section-header h2 .green{color:#00ff88}
+.features .section-header p{font-size:14px;color:#444;max-width:500px;margin:0 auto}
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feature-card{padding:32px 28px;border:1px solid rgba(255,255,255,0.06);border-radius:10px;background:rgba(255,255,255,0.01);transition:all 0.3s}
+.feature-card:hover{border-color:rgba(0,255,136,0.2);background:rgba(0,255,136,0.02);transform:translateY(-2px)}
+.feature-card .icon{font-size:24px;margin-bottom:16px;display:block}
+.feature-card h3{font-size:16px;font-weight:600;margin-bottom:10px;color:#ddd}
+.feature-card p{font-size:13px;color:#444;line-height:1.6}
+.feature-card .ascii-icon{color:#00ff88;font-size:20px;margin-bottom:16px;display:block;opacity:0.8}
+
+/* ASCII Social Post Preview */
+.post-preview{padding:60px 0 80px}
+.post-preview .section-header{text-align:center;margin-bottom:48px}
+.post-preview .section-header h2{font-size:28px;font-weight:700;margin-bottom:12px}
+.post-preview .section-header h2 .green{color:#00ff88}
+.post-preview .section-header p{font-size:14px;color:#444}
+
+.post-card{max-width:600px;margin:0 auto;border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.02)}
+.post-card-header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.post-avatar-small{width:40px;height:40px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-size:8px;color:#00ff88;overflow:hidden;border:1px solid rgba(0,255,136,0.2)}
+.post-avatar-small pre{font-size:5px;line-height:1;margin:0}
+.post-user{display:flex;flex-direction:column}
+.post-user .name{font-size:13px;font-weight:600;color:#ddd}
+.post-user .handle{font-size:11px;color:#444}
+.post-card-body{padding:20px;min-height:200px;display:flex;align-items:center;justify-content:center}
+.post-card-body .ascii-art-post{font-size:7px;line-height:1;color:#00ff88;white-space:pre;text-shadow:0 0 8px rgba(0,255,136,0.2)}
+.post-card-footer{display:flex;align-items:center;justify-content:space-around;padding:14px 20px;border-top:1px solid rgba(255,255,255,0.06)}
+.post-action{display:flex;align-items:center;gap:6px;font-size:12px;color:#444;cursor:pointer;transition:color 0.2s}
+.post-action:hover{color:#00ff88}
+.post-action .count{font-size:11px}
+
+/* CTA Section */
+.cta{padding:80px 0;text-align:center}
+.cta-box{padding:60px 40px;border:1px solid rgba(0,255,136,0.15);border-radius:16px;background:linear-gradient(180deg,rgba(0,255,136,0.03) 0%,transparent 100%);position:relative;overflow:hidden}
+.cta-box::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle at center,rgba(0,255,136,0.04) 0%,transparent 60%);pointer-events:none}
+.cta h2{font-size:32px;font-weight:700;margin-bottom:16px;letter-spacing:-0.5px}
+.cta h2 .green{color:#00ff88}
+.cta p{font-size:14px;color:#444;margin-bottom:36px;max-width:400px;margin-left:auto;margin-right:auto}
+.cta .terminal-line{font-size:14px;color:#00ff88;margin-bottom:32px;opacity:0.7}
+
+/* Footer */
+footer{padding:32px 0;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between}
+footer .copy{font-size:11px;color:#333;letter-spacing:1px}
+footer .links{display:flex;gap:24px}
+footer .links a{font-size:11px;color:#333;text-decoration:none;transition:color 0.2s}
+footer .links a:hover{color:#00ff88}
+
+/* Responsive */
+@media(max-width:900px){.hero{flex-direction:column;text-align:center;gap:40px}.hero-text p{margin:0 auto 36px}.hero-buttons{justify-content:center}.feature-grid{grid-template-columns:1fr}.hero-text h1{font-size:32px}.stats-bar{flex-wrap:wrap}.stat{min-width:50%}}
+</style>
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<!-- ASCII Rain Background -->
+<div class="ascii-rain" id="asciiRain"></div>
+
+<div class="container">
+
+  <!-- Navigation -->
+  <nav>
+    <div class="logo">[<span>X</span>EET]<span class="cursor"></span></div>
+    <div class="nav-links">
+      <a href="#">PROTOCOL</a>
+      <a href="#">STUDIO</a>
+      <a href="#">ASCII_GEN</a>
+      <a href="#">DOCS</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-text">
+      <div class="tag">// ASCII SOCIAL ENGINE v2.0</div>
+      <h1>
+        <span class="green">Transform</span> your posts<br/>
+        into <span class="red">ASCII</span> art<span class="blue">.</span>
+      </h1>
+      <p>Generate stunning social media images with ASCII character effects. Turn any avatar or photo into retro terminal art that stands out in every feed.</p>
+      <div class="hero-buttons">
+        <button class="btn-primary">GENERATE NOW</button>
+        <button class="btn-secondary">VIEW GALLERY</button>
+      </div>
+    </div>
+    <div class="hero-avatar">
+      <div class="avatar-frame">
+        <div class="avatar-dots"><span></span><span></span><span></span></div>
+        <div class="ascii-overlay">
+          <pre class="ascii-art" id="asciiAvatar"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat"><div class="val green">12.4K</div><div class="label">ASCII POSTS</div></div>
+    <div class="stat"><div class="val red">847</div><div class="label">CREATORS</div></div>
+    <div class="stat"><div class="val blue">2.1M</div><div class="label">IMPRESSIONS</div></div>
+    <div class="stat"><div class="val yellow">99.8%</div><div class="label">UPTIME</div></div>
+  </div>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="section-header">
+      <h2>How it <span class="green">works</span></h2>
+      <p>Three steps to transform any image into ASCII social art</p>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="ascii-icon">[&gt;_]</span>
+        <h3>Upload Avatar</h3>
+        <p>Drop your pixel art, photo, or any image. Our engine analyzes luminance and maps each region to ASCII characters.</p>
+      </div>
+      <div class="feature-card">
+        <span class="ascii-icon">{&lt;/&gt;}</span>
+        <h3>Choose Style</h3>
+        <p>Matrix rain, retro terminal, hacker aesthetic, minimal dots, or full Unicode block art. 12+ presets available.</p>
+      </div>
+      <div class="feature-card">
+        <span class="ascii-icon">[^_^]</span>
+        <h3>Export & Share</h3>
+        <p>One-click export as PNG, SVG, or raw text. Optimized dimensions for Twitter, Instagram, Discord, and more.</p>
+      </div>
+      <div class="feature-card">
+        <span class="ascii-icon">|#|#|</span>
+        <h3>Color Modes</h3>
+        <p>Monochrome green terminal, full RGB mapping, neon gradients, or custom palette. Match your brand aesthetic.</p>
+      </div>
+      <div class="feature-card">
+        <span class="ascii-icon">~&gt;&gt;~</span>
+        <h3>Animation</h3>
+        <p>Generate animated ASCII sequences — glitch transitions, typing effects, and matrix-style character cascades as GIF or MP4.</p>
+      </div>
+      <div class="feature-card">
+        <span class="ascii-icon">{API}</span>
+        <h3>Developer API</h3>
+        <p>RESTful endpoints for batch generation. Integrate ASCII art generation directly into your app or social media workflow.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Social Post Preview -->
+  <section class="post-preview">
+    <div class="section-header">
+      <h2>Post <span class="green">Preview</span></h2>
+      <p>See how your ASCII art looks as a social media post</p>
+    </div>
+    <div class="post-card">
+      <div class="post-card-header">
+        <div class="post-avatar-small">
+          <pre id="miniAvatar"></pre>
+        </div>
+        <div class="post-user">
+          <span class="name">pixel_dev</span>
+          <span class="handle">@pixel_dev · 2m</span>
+        </div>
+      </div>
+      <div class="post-card-body">
+        <pre class="ascii-art-post" id="postArt"></pre>
+      </div>
+      <div class="post-card-footer">
+        <div class="post-action">&#9829; <span class="count">2.4K</span></div>
+        <div class="post-action">&#8635; <span class="count">891</span></div>
+        <div class="post-action">&#9733; <span class="count">5.2K</span></div>
+        <div class="post-action">&#8599; <span class="count">Share</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="cta-box">
+      <div class="terminal-line">$ npx @xeet/ascii-gen --mode=social</div>
+      <h2>Start creating <span class="green">now</span></h2>
+      <p>Join hundreds of creators making their social presence uniquely retro.</p>
+      <button class="btn-primary">LAUNCH STUDIO</button>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="copy">&copy; 2026 XEET PROTOCOL. ALL RIGHTS RESERVED.</div>
+    <div class="links">
+      <a href="#">GITHUB</a>
+      <a href="#">DOCS</a>
+      <a href="#">DISCORD</a>
+      <a href="#">STATUS</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+// ASCII character set ordered by "density" (dark to light)
+const CHARS = '@%#*+=-:. ';
+const CHARS_LIGHT = ' .:-=+*#%@';
+
+// ---- ASCII Art of the pixel character (hand-crafted to match the avatar) ----
+const AVATAR_ASCII = `
+        ..::::::..
+      .::########::.
+    .::##@@@@@@@@##::.
+   .::##@@@@@@@@@@##::.
+   ::##@@########@@##::
+   ::##@@#      #@@##::
+   ::##@@# .  . #@@##::
+   ::##@@#  --  #@@##::
+   ::##@@########@@##::
+   ::####@@@@@@@@####::
+    ::##@@@@@@@@@@##::
+    ::##@@@@@@@@@@##::
+   .::##@@@@@@@@@@##::.
+   ::################::
+   ::##::::::::::##::::
+   ::##::      ::##::::
+   ::##::      ::##::::
+    ::::::      ::::::
+`;
+
+const AVATAR_DETAILED = `
+            .:;;;;;;:.
+         .:;;########;;:.
+       .:;;##@@@@@@@@##;;:.
+      :;;##@@@@@@@@@@@@##;;:
+     :;;##@@@@@@@@@@@@@@##;;:
+     :;;##@@@@@@@@@@@@@@##;;:
+    :;;####@@@@    @@@@####;;:
+    :;;####@@  .  .  @@####;;:
+    :;;####@@   --   @@####;;:
+    :;;####@@@@    @@@@####;;:
+    :;;####@@@@@@@@@@@@####;;:
+     :;;##@@@@@@@@@@@@@@##;;:
+      :;;##@@@@@@@@@@@@##;;:
+      :;;####@@@@@@@@####;;:
+     :;;####@@@@@@@@@@####;;:
+     :;;##@@@@@@@@@@@@@@##;;:
+     :;;################;;;;:
+      :;;##;;::::::;;##;;::
+      :;;##;;      ;;##;;::
+       ::;;::      ::;;::
+        ::::        ::::
+`;
+
+// Larger detailed version for hero
+const HERO_ASCII = `
+                  ..:::::::::..
+              ..:::;;########;;:::..
+           .:::;;##@@@@@@@@@@@@##;;:::.
+         .::;;##@@@@@@@@@@@@@@@@@@##;;::.
+        ::;;##@@@@@@@@@@@@@@@@@@@@@@##;;::
+       ::;;##@@@@@@@@@@@@@@@@@@@@@@@@##;;::
+      ::;;##@@@@@@@@@@@@@@@@@@@@@@@@@@##;;::
+      ::;;####@@@@@@@@@@@@@@@@@@@@@@####;;::
+      ::;;####@@@@@@        @@@@@@####;;::;;
+      ::;;####@@@@   .    .   @@@@####;;::;;
+      ::;;####@@@@            @@@@####;;::;;
+      ::;;####@@@@    ----    @@@@####;;::;;
+      ::;;####@@@@@@        @@@@@@####;;::;;
+      ::;;####@@@@@@@@@@@@@@@@@@@@####;;::;;
+       ::;;##@@@@@@@@@@@@@@@@@@@@@@##;;::::
+        ::;;##@@@@@@@@@@@@@@@@@@@@##;;::::
+        ::;;####@@@@@@@@@@@@@@@@####;;::::
+       ::;;######@@@@@@@@@@@@@@######;;::::
+       ::;;####@@@@@@@@@@@@@@@@@@####;;::::
+       ::;;##############################;;:
+        ::;;####;;::::::::::::::::;;####;;::
+        ::;;####;;::            ::;;####;;::
+         ::;;####;;::          ::;;####;;::
+          ::::;;;;;;::        ::;;;;;;::::
+            ::::::::            ::::::::
+`;
+
+// Mini avatar for post header
+const MINI_ASCII = ` :##:
+#@@@@#
+#@  @#
+#@--@#
+ :##: `;
+
+// ASCII art for the social post (character in artistic frame)
+const POST_ASCII = `
+  +--------------------------------------+
+  |  .::::::::::::::::::::::::::::::.    |
+  |  ::;;##@@@@@@@@@@@@@@@@@@##;;::     |
+  |  ::;;##@@@@@@@@@@@@@@@@@@##;;::     |
+  |  ::;;####@@@@      @@@@####;;::     |
+  |  ::;;####@@  .  .  @@####;;::      |
+  |  ::;;####@@   --   @@####;;::      |
+  |  ::;;####@@@@      @@@@####;;::     |
+  |  ::;;####@@@@@@@@@@@@@@####;;::     |
+  |  ::;;##@@@@@@@@@@@@@@@@@@##;;::     |
+  |  ::;;######@@@@@@@@@@######;;::     |
+  |  ::;;####@@@@@@@@@@@@@@####;;::     |
+  |  ::;;######################;;::     |
+  |  ::;;####;;::::::::;;####;;::       |
+  |  ::;;####;;::    ::;;####;;::       |
+  |   ::::;;::        ::;;::::         |
+  |  .:::::::::::::::::::::::::::.      |
+  |                                      |
+  |   @pixel_dev · ASCII SOCIAL ART     |
+  |   #ascii #pixelart #terminal        |
+  +--------------------------------------+
+`;
+
+// Set ASCII art content
+document.getElementById('asciiAvatar').textContent = HERO_ASCII;
+document.getElementById('miniAvatar').textContent = MINI_ASCII;
+document.getElementById('postArt').textContent = POST_ASCII;
+
+// Generate ASCII rain columns
+const rainContainer = document.getElementById('asciiRain');
+const cols = Math.floor(window.innerWidth / 18);
+
+for (let i = 0; i < cols; i++) {
+  const col = document.createElement('div');
+  col.className = 'rain-col';
+  col.style.left = (i * 18) + 'px';
+  col.style.animationDuration = (8 + Math.random() * 12) + 's';
+  col.style.animationDelay = (-Math.random() * 20) + 's';
+
+  let text = '';
+  const len = 20 + Math.floor(Math.random() * 30);
+  for (let j = 0; j < len; j++) {
+    const chars = '01アイウエオカキクケコサシスセソ@#$%&*+=';
+    text += chars[Math.floor(Math.random() * chars.length)] + '\n';
+  }
+  col.textContent = text;
+  rainContainer.appendChild(col);
+}
+
+// Subtle glitch on the hero ASCII art periodically
+const heroAscii = document.getElementById('asciiAvatar');
+setInterval(() => {
+  const lines = HERO_ASCII.split('\n');
+  const glitchLine = Math.floor(Math.random() * lines.length);
+  const glitched = [...lines];
+
+  if (Math.random() > 0.7) {
+    const line = glitched[glitchLine];
+    if (line) {
+      const offset = Math.floor(Math.random() * 3) - 1;
+      glitched[glitchLine] = ' '.repeat(Math.max(0, offset)) + line;
+    }
+    heroAscii.textContent = glitched.join('\n');
+
+    setTimeout(() => {
+      heroAscii.textContent = HERO_ASCII;
+    }, 100);
+  }
+}, 3000);
+
+// Typing effect for terminal line in CTA
+const termLine = document.querySelector('.terminal-line');
+const fullText = termLine.textContent;
+termLine.textContent = '$ ';
+let charIdx = 2;
+
+setTimeout(() => {
+  const typeInterval = setInterval(() => {
+    if (charIdx < fullText.length) {
+      termLine.textContent = fullText.substring(0, charIdx + 1);
+      charIdx++;
+    } else {
+      clearInterval(typeInterval);
+      // Add blinking cursor
+      const cursorEl = document.createElement('span');
+      cursorEl.className = 'cursor';
+      termLine.appendChild(cursorEl);
+    }
+  }, 60);
+}, 2000);
+</script>
+
+</body>
+</html>
